@@ -26,10 +26,10 @@ def normalize_sample(aud_sample):
     return aud_sample*1.0/abs_max
 
 
-def is_periodic(aud_sample, sampling_rate = 8000):
+def is_periodic(aud_sample, SAMPLING_RATE = 8000):
     '''
     :param aud_sample: Numpy 1D array rep of audio sample
-    :param sampling_rate: Used to focus on human speech freq range
+    :param SAMPLING_RATE: Used to focus on human speech freq range
     :return: True if periodic, False if aperiodic
     '''
 
@@ -41,8 +41,8 @@ def is_periodic(aud_sample, sampling_rate = 8000):
     print(values.max, values.shape)
 
     # [50-400 Hz] corresponds to [2.5-20] ms OR [20-160] samples for 8 KHz sampling rate
-    l_idx = int(sampling_rate*2.5/1000)
-    r_idx = int(sampling_rate*20/1000)
+    l_idx = int(SAMPLING_RATE*2.5/1000)
+    r_idx = int(SAMPLING_RATE*20/1000)
 
     print(l_idx, r_idx)
 
@@ -56,9 +56,9 @@ def is_periodic(aud_sample, sampling_rate = 8000):
         return True
 
 
-sampling_rate = 8000
-window_size = sampling_rate*50/1000  # 400 samples, equivalent to 50 ms
-window_stride = sampling_rate*10/1000   # 80 samples, equivalent to 10 ms
+SAMPLING_RATE = 8000
+WINDOW_SIZE = SAMPLING_RATE*50/1000  # 400 samples, equivalent to 50 ms
+WINDOW_STRIDE = SAMPLING_RATE*10/1000   # 80 samples, equivalent to 10 ms
 
 energy_threshold = 1e-4  # TODO: For this to be useful, normalize the speech samples before calculating energy
 
@@ -70,7 +70,7 @@ energy_threshold = 1e-4  # TODO: For this to be useful, normalize the speech sam
 # c. Noise Cancellation (TODO)
 
 # Somehow, the down-sampling results in amplitude rescaling - Why?
-sig = signal.resample(sig, len(sig)*sampling_rate/rate)
+sig = signal.resample(sig, len(sig)*SAMPLING_RATE/rate)
 
 sig = normalize_sample(sig)
 
@@ -84,10 +84,10 @@ sig = normalize_sample(sig)
 # 3. Classifier to detect nasality index using FFT values as features. 'Phase' info can be included later
 # 4. Measure nasality only using the windows reaching #3
 
-for i in range(0, len(sig), window_stride):
-# for i in range(8000, 9200, window_stride):
+for i in range(0, len(sig), WINDOW_STRIDE):
+# for i in range(8000, 9200, WINDOW_STRIDE):
 
-    window = sig[i:i+window_size]
+    window = sig[i:i+WINDOW_SIZE]
 
     window_energy = calculate_energy(window)
     print(len(window), window.shape, window_energy)
