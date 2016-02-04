@@ -4,16 +4,7 @@ import scipy
 import scipy.io.wavfile as wav
 from scipy.fftpack import fft, fftfreq
 import scipy.signal as signal
-
-
-def calculate_energy(aud_sample):
-    '''
-    :param aud_sample: Numpy 1D array representation of audio sample, sample size > 0
-    :return: Mean energy of aud_sample, float
-    '''
-
-    energy = np.mean(aud_sample*aud_sample)
-    return energy
+from sklearn import decomposition
 
 
 def normalize_sample(aud_sample):
@@ -24,6 +15,34 @@ def normalize_sample(aud_sample):
 
     abs_max = np.max(np.abs(aud_sample))
     return aud_sample*1.0/abs_max
+
+
+def preprocess_sample(aud_sample):
+    # Step 0: Pre-process the speech sample
+    # a. Down-sample to 8 MHz (should be enough for Autism detection - only human speech)
+    # b. Normalization [Apply gain s.t the sample data is in the range [-1.0, 1.0]
+    # c. Noise Cancellation (TODO)
+
+    # Somehow, the down-sampling results in amplitude rescaling - Why?
+    proc_sample = signal.resample(aud_sample, len(aud_sample)*SAMPLING_RATE/rate)
+
+    proc_sample = normalize_sample(proc_sample)
+
+    # plt.plot(range(len(proc_sample)), proc_sample)
+    # plt.show()
+    # exit()
+
+    return proc_sample
+
+
+def calculate_energy(aud_sample):
+    '''
+    :param aud_sample: Numpy 1D array representation of audio sample, sample size > 0
+    :return: Mean energy of aud_sample, float
+    '''
+
+    energy = np.mean(aud_sample*aud_sample)
+    return energy
 
 
 def is_periodic(aud_sample, SAMPLING_RATE = 8000):
@@ -38,22 +57,71 @@ def is_periodic(aud_sample, SAMPLING_RATE = 8000):
 
     # Use auto-correlation to find if there is enough periodicity in [50-400] Hz range
     values = signal.correlate(aud_sample, aud_sample)
-    print(values.max, values.shape)
+    # print(values.max, values.shape)
 
     # [50-400 Hz] corresponds to [2.5-20] ms OR [20-160] samples for 8 KHz sampling rate
     l_idx = int(SAMPLING_RATE*2.5/1000)
     r_idx = int(SAMPLING_RATE*20/1000)
-
-    print(l_idx, r_idx)
+    # print(l_idx, r_idx)
 
     subset_values = values[l_idx:r_idx]
 
-    print(subset_values.shape, np.argmax(subset_values), subset_values.max())
+    # print(subset_values.shape, np.argmax(subset_values), subset_values.max())
 
     if subset_values.max() < thresh:
         return False
     else:
         return True
+
+
+def create_labeled_data(aud_sample, nasal=0):
+    # For each window:
+    # 1. Filter out low energy samples
+    # 2. Filter out aperiodic data (ONLY periodic speech samples can be nasalized - References?)
+    # 3. Classifier to detect nasality index using FFT values as features. 'Phase' info can be included later
+    # 4. Measure nasality only using the windows reaching #3
+
+    num_windows = (len(aud_sample) - WINDOW_SIZE)/WINDOW_STRIDE
+
+    features = np.zeros((num_windows, WINDOW_SIZE))
+    labels = np.zeros(num_windows)
+
+    idx = 0
+    for i in range(0, len(aud_sample), WINDOW_STRIDE):
+
+        window = aud_sample[i:i+WINDOW_SIZE]
+
+        window_energy = calculate_energy(window)
+        # print(len(window), window.shape, window_energy)
+
+        # Energy filter
+        if window_energy < energy_threshold:
+            continue
+
+        # Periodicity check
+        if is_periodic(window) is False:
+            continue
+
+        # FFT to shift to frequency domain - use frequency spectrum as features
+        fft_values = abs(fft(window))
+        # print(aud_sample.shape, window.shape, fft_values.shape)
+
+        feat = 20*scipy.log10(fft_values)
+        # print(feat.shape, idx)
+
+        features[idx:, ] = feat
+        labels[idx] = nasal
+        idx += 1
+
+        # fft_freq = fftfreq(window.size, 1)
+        # print(len(fft_freq), fft_freq.shape)
+        # plt.plot(fft_freq, 20*scipy.log10(fft_values), 'x')
+        # plt.show()
+        # plt.plot(range(len(window)), window)
+        # plt.show()
+        # exit()
+
+    return features[0:idx, ], labels[0:idx]
 
 
 SAMPLING_RATE = 8000
@@ -62,52 +130,31 @@ WINDOW_STRIDE = SAMPLING_RATE*10/1000   # 80 samples, equivalent to 10 ms
 
 energy_threshold = 1e-4  # TODO: For this to be useful, normalize the speech samples before calculating energy
 
-(rate, sig) = wav.read("./audacity_samples/op.wav")
+# (rate, sig) = wav.read("./audacity_samples/op.wav")
+(rate, sig) = wav.read("./audacity_samples/sree_reg.wav")
+(rate, nasal_sig) = wav.read("./audacity_samples/sree_nasal.wav")
 
-# Step 0: Pre-process the speech sample
-# a. Down-sample to 8 MHz (should be enough for Autism detection - only human speech)
-# b. Normalization [Apply gain s.t the sample data is in the range [-1.0, 1.0]
-# c. Noise Cancellation (TODO)
+print(sig.shape, nasal_sig.shape)
 
-# Somehow, the down-sampling results in amplitude rescaling - Why?
-sig = signal.resample(sig, len(sig)*SAMPLING_RATE/rate)
+sig = preprocess_sample(sig)
+nasal_sig = preprocess_sample(nasal_sig)
 
-sig = normalize_sample(sig)
+reg_features, reg_labels = create_labeled_data(sig, nasal=0)
+nasal_features, nasal_labels = create_labeled_data(nasal_sig, nasal=1)
 
-# plt.plot(range(len(sig)), sig)
-# plt.show()
-# exit()
+print(reg_features.shape, reg_features.mean())
 
-# For each window:
-# 1. Filter out low energy samples
-# 2. Filter out aperiodic data (ONLY periodic speech samples can be nasalized - References?)
-# 3. Classifier to detect nasality index using FFT values as features. 'Phase' info can be included later
-# 4. Measure nasality only using the windows reaching #3
+pca = decomposition.PCA(n_components=2)
+pca.fit(reg_features)
+X = pca.transform(reg_features)
 
-for i in range(0, len(sig), WINDOW_STRIDE):
-# for i in range(8000, 9200, WINDOW_STRIDE):
+pca = decomposition.PCA(n_components=2)
+pca.fit(nasal_features)
+Y = pca.transform(nasal_features)
 
-    window = sig[i:i+WINDOW_SIZE]
+print (X, X.shape)
+print (Y, Y.shape)
 
-    window_energy = calculate_energy(window)
-    print(len(window), window.shape, window_energy)
-
-    # Energy filter
-    if window_energy < energy_threshold:
-        continue
-
-    # Periodicity check
-    if is_periodic(window) is False:
-        continue
-
-    # FFT to shift to frequency domain - use frequency spectrum as features for classifier
-    fft_values = abs(fft(window))
-    print(sig.shape, window.shape, fft_values.shape)
-    fft_freq = fftfreq(window.size, 1)
-    print(len(fft_freq), fft_freq.shape)
-
-    plt.plot(fft_freq, 20*scipy.log10(fft_values), 'x')
-    plt.show()
-    plt.plot(range(len(window)), window)
-    plt.show()
-    exit()
+plt.plot(X[:, 0], X[:, 1], 'ro')
+plt.plot(Y[:, 0], Y[:, 1], 'g+')
+plt.show()
