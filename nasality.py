@@ -4,7 +4,76 @@ import scipy
 import scipy.io.wavfile as wav
 from scipy.fftpack import fft, fftfreq
 import scipy.signal as signal
-from sklearn import decomposition
+from sklearn.decomposition import PCA
+# from sklearn.lda import LDA  # deprecated?
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+from sklearn import linear_model
+
+
+def classify_using_pca(feat1, feat2, num_comp=2):
+    pca = PCA(n_components=num_comp)
+    pca.fit(feat1)
+    X = pca.transform(feat1)
+
+    pca.fit(feat2)
+    Y = pca.transform(feat2)
+
+    plt.plot(X[:, 0], X[:, 1], 'ro')
+    plt.plot(Y[:, 0], Y[:, 1], 'g+')
+    plt.show()
+
+    return X, Y
+
+
+def classify_using_lda(feat1, feat2, num_comp=2):
+
+    n_plus = len(feat1)
+    n_minus = len(feat2)
+
+    X = np.concatenate((feat1, feat2), axis=0)
+    y = np.concatenate((np.zeros(n_plus), np.ones(n_minus)), axis=0)
+    y = y + 1
+
+    print(X.shape, y.shape, n_plus, n_minus, feat1.shape, feat2.shape)
+
+    lda = LDA(n_components=num_comp)
+    lda.fit(X, y)
+
+    # TODO FIXME Why is this returning n_samples x 1, and not n_samples x 2?
+    X_tr = lda.transform(X)
+
+    print(X_tr.shape, lda.score(X, y))
+    exit()
+
+    plt.plot(X1[:, 0], X1[:, 1], 'ro')
+    plt.plot(X2[:, 0], X2[:, 1], 'g+')
+    plt.show()
+
+    return X, Y
+
+
+def classify_using_logistic(feat1, feat2):
+
+    n_plus = len(feat1)
+    n_minus = len(feat2)
+
+    X = np.concatenate((feat1, feat2), axis=0)
+    y = np.concatenate((np.zeros(n_plus), np.ones(n_minus)), axis=0)
+    y = y + 1
+
+    print(X.shape, y.shape, n_plus, n_minus, feat1.shape, feat2.shape)
+
+    logreg = linear_model.LogisticRegression(C=1e5)
+    logreg.fit(X, y)
+
+    print(logreg.score(X, y))
+    exit()
+
+    plt.plot(X1[:, 0], X1[:, 1], 'ro')
+    plt.plot(X2[:, 0], X2[:, 1], 'g+')
+    plt.show()
+
+    return X, Y
 
 
 def normalize_sample(aud_sample):
@@ -26,7 +95,11 @@ def preprocess_sample(aud_sample):
     # Somehow, the down-sampling results in amplitude rescaling - Why?
     proc_sample = signal.resample(aud_sample, len(aud_sample)*SAMPLING_RATE/rate)
 
-    proc_sample = normalize_sample(proc_sample)
+    ## TODO Not recommended to normalize based on amplitude
+    # proc_sample = normalize_sample(proc_sample)
+    # Instead, convert from 16-bit PCM to float
+    if np.max(proc_sample) > 1.0:
+        proc_sample = proc_sample*1.0/pow(2, 15)
 
     # plt.plot(range(len(proc_sample)), proc_sample)
     # plt.show()
@@ -144,17 +217,17 @@ nasal_features, nasal_labels = create_labeled_data(nasal_sig, nasal=1)
 
 print(reg_features.shape, reg_features.mean())
 
-pca = decomposition.PCA(n_components=2)
-pca.fit(reg_features)
-X = pca.transform(reg_features)
+# NOTE: PCA isn't helpful as the primary components of both nasal
+# and non-nasal samples are likely to be similar
+# Instead, try Fischer Linear Discriminant (supervised: Prof Saul's suggestion)
+# classify_using_pca(reg_features, nasal_features, num_comp=2)
 
-pca = decomposition.PCA(n_components=2)
-pca.fit(nasal_features)
-Y = pca.transform(nasal_features)
 
-print (X, X.shape)
-print (Y, Y.shape)
+# LINEAR DISCRIMINANT ANALYSIS (Supervised) -
+# Seems to do a great job, but # of samples seems insuff, (later)
+# classify_using_lda(reg_features, nasal_features, num_comp=2)
 
-plt.plot(X[:, 0], X[:, 1], 'ro')
-plt.plot(Y[:, 0], Y[:, 1], 'g+')
-plt.show()
+# LOGISTIC REGRESSION: Gets to 100% accuracy with the initial samples
+classify_using_logistic(reg_features, nasal_features)
+
+# TODO: Use histograms to visually interpret the differences b/w nasal and non-nasal samples
