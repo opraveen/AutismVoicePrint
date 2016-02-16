@@ -32,7 +32,7 @@ def classify_using_lda(feat1, feat2, num_comp=2):
 
     X = np.concatenate((feat1, feat2), axis=0)
     y = np.concatenate((np.zeros(n_plus), np.ones(n_minus)), axis=0)
-    y = y + 1
+    y += 1
 
     print(X.shape, y.shape, n_plus, n_minus, feat1.shape, feat2.shape)
 
@@ -40,16 +40,20 @@ def classify_using_lda(feat1, feat2, num_comp=2):
     lda.fit(X, y)
 
     # TODO FIXME Why is this returning n_samples x 1, and not n_samples x 2?
+    # Is it able to to differentiate using just 1 component? Crazy!!
     X_tr = lda.transform(X)
 
     print(X_tr.shape, lda.score(X, y))
-    exit()
+
+    # CRAZY, we don't actually have the 2nd component from LDA
+    X1 = np.concatenate((X_tr[0:n_plus], np.zeros((n_plus, 1))), axis=1)
+    X2 = np.concatenate((X_tr[-n_minus:], np.ones((n_minus, 1))), axis=1)
 
     plt.plot(X1[:, 0], X1[:, 1], 'ro')
     plt.plot(X2[:, 0], X2[:, 1], 'g+')
-    plt.show()
 
-    return X, Y
+    plt.ylim(-1, 3)
+    plt.show()
 
 
 def classify_using_logistic(feat1, feat2):
@@ -66,14 +70,7 @@ def classify_using_logistic(feat1, feat2):
     logreg = linear_model.LogisticRegression(C=1e5)
     logreg.fit(X, y)
 
-    print(logreg.score(X, y))
-    exit()
-
-    plt.plot(X1[:, 0], X1[:, 1], 'ro')
-    plt.plot(X2[:, 0], X2[:, 1], 'g+')
-    plt.show()
-
-    return X, Y
+    print("Score using logistic regression on training data is ", logreg.score(X, y))
 
 
 def normalize_sample(aud_sample):
@@ -224,10 +221,14 @@ print(reg_features.shape, reg_features.mean())
 
 
 # LINEAR DISCRIMINANT ANALYSIS (Supervised) -
-# Seems to do a great job, but # of samples seems insuff, (later)
-# classify_using_lda(reg_features, nasal_features, num_comp=2)
+# Runs into the warning - "Variables are collinear", ends up generating only one component
+# And the best part, That one-component alone seems to do a
+# great job with classification (refer to LDA.png)
+classify_using_lda(reg_features, nasal_features, num_comp=2)
 
 # LOGISTIC REGRESSION: Gets to 100% accuracy with the initial samples
-classify_using_logistic(reg_features, nasal_features)
+# classify_using_logistic(reg_features, nasal_features)
 
 # TODO: Use histograms to visually interpret the differences b/w nasal and non-nasal samples
+
+
