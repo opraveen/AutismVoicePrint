@@ -56,7 +56,22 @@ def classify_using_lda(feat1, feat2, num_comp=2):
     plt.show()
 
 
-def classify_using_logistic(feat1, feat2):
+
+def classify_using_logistic(feat1, feat2, classifier):
+
+    n_plus = len(feat1)
+    n_minus = len(feat2)
+
+    X = np.concatenate((feat1, feat2), axis=0)
+    y = np.concatenate((np.zeros(n_plus), np.ones(n_minus)), axis=0)
+    y = y + 1
+
+    print(X.shape, y.shape, n_plus, n_minus, feat1.shape, feat2.shape)
+
+    print("Score using logistic regression on training data is ", classifier.score(X, y))
+
+
+def train_using_logistic(feat1, feat2):
 
     n_plus = len(feat1)
     n_minus = len(feat2)
@@ -71,6 +86,7 @@ def classify_using_logistic(feat1, feat2):
     logreg.fit(X, y)
 
     print("Score using logistic regression on training data is ", logreg.score(X, y))
+    return logreg
 
 
 def normalize_sample(aud_sample):
@@ -111,7 +127,8 @@ def calculate_energy(aud_sample):
     :return: Mean energy of aud_sample, float
     '''
 
-    energy = np.mean(aud_sample*aud_sample)
+    aud_sample = aud_sample.astype(int)
+    energy = np.mean(np.multiply(aud_sample,aud_sample))
     return energy
 
 
@@ -123,16 +140,16 @@ def is_periodic(aud_sample, SAMPLING_RATE = 8000):
     '''
 
     # TODO: Find a sensible threshold
-    thresh = 1e-4
+    thresh = 1e-1
 
     # Use auto-correlation to find if there is enough periodicity in [50-400] Hz range
-    values = signal.correlate(aud_sample, aud_sample)
+    values = signal.correlate(aud_sample, aud_sample, mode='full')
+    # values = values[values.size/2:]
     # print(values.max, values.shape)
 
     # [50-400 Hz] corresponds to [2.5-20] ms OR [20-160] samples for 8 KHz sampling rate
     l_idx = int(SAMPLING_RATE*2.5/1000)
     r_idx = int(SAMPLING_RATE*20/1000)
-    # print(l_idx, r_idx)
 
     subset_values = values[l_idx:r_idx]
 
@@ -152,14 +169,39 @@ def create_labeled_data(aud_sample, nasal=0):
     # 4. Measure nasality only using the windows reaching #3
 
     num_windows = (len(aud_sample) - WINDOW_SIZE)/WINDOW_STRIDE
+    #num_windows = (len(aud_sample) - WINDOW_SIZE)/WINDOW_STRIDE
 
     features = np.zeros((num_windows, WINDOW_SIZE))
     labels = np.zeros(num_windows)
 
     idx = 0
+    energy_threshold = calculate_energy(aud_sample)
+    print energy_threshold
+
+    # testing thresholds
+#    wav.write("Normal/old_file.wav", 8000, aud_sample)
+#    aud_sample_periodic = aud_sample
+#
+#    for i in range(0, len(aud_sample), WINDOW_SIZE):
+#        window = aud_sample[i:i+WINDOW_SIZE]
+#        for j in range(len(window), WINDOW_SIZE):
+#            window = np.append(window,0)
+#        window_energy = calculate_energy(window)
+#        # if window_energy < energy_threshold:
+#        #    aud_sample_periodic[i:i+WINDOW_SIZE] = 0
+#        if is_periodic(window) is False:
+#            aud_sample_periodic[i:i+WINDOW_SIZE] = 0
+#        
+#    wav.write("Normal/new_file.wav", 8000, aud_sample_periodic)
+#    exit() 
+
+
+#    aud_sample = aud_periodic
     for i in range(0, len(aud_sample), WINDOW_STRIDE):
 
         window = aud_sample[i:i+WINDOW_SIZE]
+        for j in range(len(window), WINDOW_SIZE):
+            window = np.append(window,0)
 
         window_energy = calculate_energy(window)
         # print(len(window), window.shape, window_energy)
@@ -170,7 +212,7 @@ def create_labeled_data(aud_sample, nasal=0):
 
         # Periodicity check
         if is_periodic(window) is False:
-            continue
+           continue
 
         # FFT to shift to frequency domain - use frequency spectrum as features
         fft_values = abs(fft(window))
@@ -198,21 +240,36 @@ SAMPLING_RATE = 8000
 WINDOW_SIZE = SAMPLING_RATE*50/1000  # 400 samples, equivalent to 50 ms
 WINDOW_STRIDE = SAMPLING_RATE*10/1000   # 80 samples, equivalent to 10 ms
 
-energy_threshold = 1e-4  # TODO: For this to be useful, normalize the speech samples before calculating energy
 
 # (rate, sig) = wav.read("./audacity_samples/op.wav")
-(rate, sig) = wav.read("./audacity_samples/sree_reg.wav")
-(rate, nasal_sig) = wav.read("./audacity_samples/sree_nasal.wav")
+(rate, sig) = wav.read("Normal/file.wav")
+(rate, nasal_sig) = wav.read("Nasalized/CK_0001.wav")
 
+(rate_test, sig_test) = wav.read("Normal/CK_0002.wav")
+(rate_test, nasal_sig_test) = wav.read("Nasalized/CK_0002.wav")
+
+
+sig = sig[:,0]
+nasal_sig = nasal_sig[:,0]
 print(sig.shape, nasal_sig.shape)
+
+sig_test = sig_test[:,0]
+nasal_sig_test = nasal_sig_test[:,0]
+print(sig_test.shape, nasal_sig_test.shape)
 
 sig = preprocess_sample(sig)
 nasal_sig = preprocess_sample(nasal_sig)
 
+sig_test = preprocess_sample(sig_test)
+nasal_sig_test = preprocess_sample(nasal_sig_test)
+
 reg_features, reg_labels = create_labeled_data(sig, nasal=0)
 nasal_features, nasal_labels = create_labeled_data(nasal_sig, nasal=1)
-
 print(reg_features.shape, reg_features.mean())
+
+reg_features_test, reg_labels_test = create_labeled_data(sig_test, nasal=0)
+nasal_features_test, nasal_labels_test = create_labeled_data(nasal_sig_test, nasal=1)
+print(reg_features_test.shape, reg_features_test.mean())
 
 # NOTE: PCA isn't helpful as the primary components of both nasal
 # and non-nasal samples are likely to be similar
@@ -224,11 +281,12 @@ print(reg_features.shape, reg_features.mean())
 # Runs into the warning - "Variables are collinear", ends up generating only one component
 # And the best part, That one-component alone seems to do a
 # great job with classification (refer to LDA.png)
-classify_using_lda(reg_features, nasal_features, num_comp=2)
+
+#classify_using_lda(reg_features, nasal_features, num_comp=2)
 
 # LOGISTIC REGRESSION: Gets to 100% accuracy with the initial samples
-# classify_using_logistic(reg_features, nasal_features)
+classifier = train_using_logistic(reg_features, nasal_features)
+
+classify_using_logistic(reg_features_test, nasal_features_test, classifier)
 
 # TODO: Use histograms to visually interpret the differences b/w nasal and non-nasal samples
-
-
